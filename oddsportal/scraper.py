@@ -11,6 +11,10 @@ from selenium import webdriver
 from selenium.common.exceptions import NoSuchElementException
 import re
 import datetime
+import os
+
+# import from the same dir
+from . import sqlite_db as sq
 
 # in each module
 import logging
@@ -50,6 +54,41 @@ class Scraper(object):
                 logger.info('browser opened')
         
         # exception when no driver created
+ 
+    # Print iterations progress
+    def _print_progress_bar (self, iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '█'):
+        """
+        Call in a loop to create terminal progress bar
+        @params:
+            iteration   - Required  : current iteration (Int)
+            total       - Required  : total iterations (Int)
+            prefix      - Optional  : prefix string (Str)
+            suffix      - Optional  : suffix string (Str)
+            decimals    - Optional  : positive number of decimals in percent complete (Int)
+            length      - Optional  : character length of bar (Int)
+            fill        - Optional  : bar fill character (Str)
+            
+        # Sample Usage
+        from time import sleep
+        # A List of Items
+        items = list(range(0, 57))
+        l = len(items)
+        
+        # Initial call to print 0% progress
+        printProgressBar(0, l, prefix = 'Progress:', suffix = 'Complete', length = 50)
+        for i, item in enumerate(items):
+            # Do stuff...
+            sleep(0.1)
+            # Update Progress Bar
+            printProgressBar(i + 1, l, prefix = 'Progress:', suffix = 'Complete', length = 50)
+        """
+        percent = ("{0:." + str(decimals) + "f}").format(100 * (iteration / float(total)))
+        filledLength = int(length * iteration // total)
+        bar = fill * filledLength + '-' * (length - filledLength)
+        print('\r%s |%s| %s%% %s' % (prefix, bar, percent, suffix), end = '\r')
+        # Print New Line on Complete
+        if iteration == total: 
+            print()
         
     def _go_to_link(self,link):
         '''
@@ -75,29 +114,32 @@ class Scraper(object):
         logger.info('browser closed')
     
     def _convert_date(self, date):
-        '''
-        returns the date in a from yyyy-mm-dd
-        
+        '''        
         input:
             Today, 26 Sep
             Yesterday, 25 Sep
             19 Sep 2018
+            
+        return: None if the dat like Today otherwise the date in a from yyyy-mm-dd
         '''
         now = datetime.datetime.now()
         m = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
         n = ['0'+str(i) if i<10 else str(i) for i in range(1,13)]
         months = dict(zip(m,n))
         l = date.split()
-        retval = None
         
         if 'Today,' in l:
-            retval = None
+            date = None
         elif 'Yesterday,' in l:
-            retval = '{}-{}-{}'.format(now.year, months[l[-1]], l[1])
+            date = '{}-{}-{}'.format(now.year, months[l[-1]], l[1])
         else:
-            retval = '{}-{}-{}'.format(l[-1], months[l[1]], l[0])
-            
-        return retval
+            date = '{}-{}-{}'.format(l[-1], months[l[1]], l[0])
+        
+        # ?
+        #date=datetime.datetime.strptime(current_date_str, "%d %b %Y")
+        #return datetime.datetime.strftime(date,"%Y-%m-%d")
+        return date
+        
     
     def _cells_data_3way(self, table):
         '''
@@ -152,21 +194,73 @@ class Scraper(object):
                             cell.result = -1
                 
                 if cell.hour is not None:
-                    print('{} {} {} {} {} {}'.format(cell.hour, cell.url, cell.score, cell.date, cell.teams, cell.result))
+                    #print('{} {} {} {} {} {}'.format(cell.hour, cell.url, cell.score, cell.date, cell.teams, cell.result))
+                    logger.info('cell data: %s %s %s %s %s %s', cell.date, cell.hour, cell.url, cell.teams, cell.score, cell.result)
                     cells.append(cell)
 
             return cells
 
-    def get_data(self, links):
+    def get_data(self, links, db_name):
         '''
-        input is a list of links
-        returns a list of links
+        export the results into sqlite3 db
+        
+        input: 
+            links: a list of links
+            db_name: sqlite3 database name. must be in /data
+        
+        e.g.: get_data(['http://www.oddsportal.com/handball/ukraine/superleague/results/'], 'bets.db3')
         '''
         
-        html_source = self._get_html_source()
-        soup = BeautifulSoup(html_source, "html.parser")
-        # get the table which contains the results 
-        table = soup.find("table", id="tournamentTable")
+        # connect to db            
+        db_file = db_name
+        con = sq.create_conection(os.path.join(os.getcwd(),'data',db_file))
+        logger.info('db version: %s',sq.test_connection(con))
+        logger.info('connected to database')
         
-        # call cells_data(table)
+        # check if table oddsportal exists
+        tb_exists = "SELECT name FROM sqlite_master WHERE type='table' AND name='oddsportal'"
+        if not con.execute(tb_exists).fetchone():
+            logger.info('table oddsportal not exists in %s', db_name)
+            tb_create = "CREATE TABLE oddsportal ( \
+                        id         INTEGER PRIMARY KEY AUTOINCREMENT,\
+                        url        TEXT,\
+                        match_date TEXT,\
+                        match_hour TEXT,\
+                        team_home  TEXT,\
+                        team_away  TEXT,\
+                        score      TEXT,\
+                        odds_home  REAL,\
+                        odds_draw  REAL,\
+                        odds_away  REAL,\
+                        bet_result INTEGER)"
+            
+            con.execute(tb_create)
+            logger.info('table oddsportal created')
+        
+        total_rows = len(links)
+        k = 0
+        # Initial call to print 0% progress
+        self._print_progress_bar(k, total_rows, prefix = 'Progress:', suffix = 'Complete', length = 50)
+        
+        # get all the data
+        for link in links:
+            self._go_to_link(link)
+            html_source = self._get_html_source()
+            soup = BeautifulSoup(html_source, "html.parser")
+            # get the table which contains the results 
+            table = soup.find("table", id="tournamentTable")
+            
+            data = self._cells_data_3way(table)
+            
+            if data:
+                for d in data:
+                    # save to database
+                    teams = d.teams.split(" - ")
+                    sq.insert_oddsportal(con, [d.url, d.date, d.hour, teams[0], teams[1], d.score, d.odds_home, d.odds_draw, d.odds_away, d.result])
+                con.commit()
+            
+            # progress bar
+            k += 1
+            self._print_progress_bar(k, total_rows, prefix = 'Populate DB progress:', suffix = 'Complete', length = 50)
+                
         
