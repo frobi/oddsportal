@@ -9,6 +9,9 @@ Created on Tue Sep 25 15:01:08 2018
 from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.common.exceptions import NoSuchElementException
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.by import By
 import re
 import datetime
 import os
@@ -112,6 +115,12 @@ class Scraper(object):
     def close_browser(self):
         self.driver.quit()
         logger.info('browser closed')
+
+    def set_time_zone(self, timezone="Budapest"):
+        self._go_to_link(self.base_url)
+        WebDriverWait(self.driver, self.WAIT_TIME).until(EC.element_to_be_clickable((By.CSS_SELECTOR, "#user-header-timezone-expander"))).click()
+        WebDriverWait(self.driver, self.WAIT_TIME).until(EC.element_to_be_clickable((By.PARTIAL_LINK_TEXT, timezone))).click()
+        logger.info('timezone set to: %s', timezone)
     
     def _convert_date(self, date):
         '''        
@@ -194,21 +203,21 @@ class Scraper(object):
                             cell.result = -1
                 
                 if cell.hour is not None:
-                    #print('{} {} {} {} {} {}'.format(cell.hour, cell.url, cell.score, cell.date, cell.teams, cell.result))
                     logger.info('cell data: %s %s %s %s %s %s', cell.date, cell.hour, cell.url, cell.teams, cell.score, cell.result)
                     cells.append(cell)
 
             return cells
 
-    def get_data(self, links, db_name):
+    def get_data(self, links, db_name, table_name):
         '''
         export the results into sqlite3 db
         
         input: 
             links: a list of links
             db_name: sqlite3 database name. must be in /data
+            table_name: if table not exists in d it will be created
         
-        e.g.: get_data(['http://www.oddsportal.com/handball/ukraine/superleague/results/'], 'bets.db3')
+        e.g.: get_data(['http://www.oddsportal.com/handball/ukraine/superleague/results/'], 'bets.db3', 'handball')
         '''
         
         # connect to db            
@@ -216,31 +225,13 @@ class Scraper(object):
         con = sq.create_conection(os.path.join(os.getcwd(),'data',db_file))
         logger.info('db version: %s',sq.test_connection(con))
         logger.info('connected to database')
-        
-        # check if table oddsportal exists
-        tb_exists = "SELECT name FROM sqlite_master WHERE type='table' AND name='oddsportal'"
-        if not con.execute(tb_exists).fetchone():
-            logger.info('table oddsportal not exists in %s', db_name)
-            tb_create = "CREATE TABLE oddsportal ( \
-                        id         INTEGER PRIMARY KEY AUTOINCREMENT,\
-                        url        TEXT,\
-                        match_date TEXT,\
-                        match_hour TEXT,\
-                        team_home  TEXT,\
-                        team_away  TEXT,\
-                        score      TEXT,\
-                        odds_home  REAL,\
-                        odds_draw  REAL,\
-                        odds_away  REAL,\
-                        bet_result INTEGER)"
-            
-            con.execute(tb_create)
-            logger.info('table oddsportal created')
+        # check if table exists            
+        sq.chk_tabe(con, table_name)
         
         total_rows = len(links)
         k = 0
         # Initial call to print 0% progress
-        self._print_progress_bar(k, total_rows, prefix = 'Populate DB progress:', suffix = 'Complete', length = 50)
+        self._print_progress_bar(k, total_rows, prefix = 'Populate DB:', suffix = 'Complete', length = 50)
         
         # get all the data
         for link in links:
@@ -256,11 +247,15 @@ class Scraper(object):
                 for d in data:
                     # save to database
                     teams = d.teams.split(" - ")
-                    sq.insert_oddsportal(con, [d.url, d.date, d.hour, teams[0], teams[1], d.score, d.odds_home, d.odds_draw, d.odds_away, d.result])
+                    sq.insert_oddsportal(con, table_name, [d.url, d.date, d.hour, teams[0], teams[1], d.score, d.odds_home, d.odds_draw, d.odds_away, d.result])
                 con.commit()
             
             # progress bar
             k += 1
-            self._print_progress_bar(k, total_rows, prefix = 'Populate DB progress:', suffix = 'Complete', length = 50)
-                
+            self._print_progress_bar(k, total_rows, prefix = 'Populate DB:', suffix = 'Complete', length = 50)
+        
+        # close db connection
+        if con:
+            con.close()
+            logger.info('database is closed')
         
