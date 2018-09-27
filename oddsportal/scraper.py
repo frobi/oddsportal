@@ -240,7 +240,7 @@ class Scraper(object):
         total_rows = len(links)
         k = 0
         # Initial call to print 0% progress
-        self._print_progress_bar(k, total_rows, prefix = 'Progress:', suffix = 'Complete', length = 50)
+        self._print_progress_bar(k, total_rows, prefix = 'Populate DB progress:', suffix = 'Complete', length = 50)
         
         # get all the data
         for link in links:
