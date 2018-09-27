@@ -5,9 +5,6 @@ Created on Fri Aug  3 10:42:55 2018
 
 """
 from selenium import webdriver
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException
 
 from bs4 import BeautifulSoup
@@ -102,11 +99,6 @@ class Crawler(object):
         self.driver.quit()
         logger.info('browser closed')
     
-    def set_time_zone(self, timezone="Budapest"):
-        self._go_to_link(self.base_url)
-        WebDriverWait(self.driver, self.WAIT_TIME).until(EC.element_to_be_clickable((By.CSS_SELECTOR, "#user-header-timezone-expander"))).click()
-        WebDriverWait(self.driver, self.WAIT_TIME).until(EC.element_to_be_clickable((By.PARTIAL_LINK_TEXT, timezone))).click()
-        logger.info('timezone set to: %s', timezone)
         
     def _league_seasons(self, league_link):
         '''
@@ -133,8 +125,6 @@ class Crawler(object):
             p_links.append(self._pagination(link))
         
         # flatten the results
-        #https://stackoverflow.com/questions/952914/making-a-flat-list-out-of-list-of-lists-in-python#952946
-        #flat_list = [item for sublist in a_list for item in sublist]
         return [item for sublist in p_links for item in sublist]
     
     def _pagination(self, season_link):
@@ -184,7 +174,6 @@ class Crawler(object):
         soup = BeautifulSoup(html_source, "html.parser")
         links = soup.find("table", class_="table-main sport").find_all("a",{"foo":"f"})
         for a in links:
-            # setdefault - key might exist already
             league_dict.setdefault(a.get_text(strip=True), []).append(self.base_url + a["href"])
         
         logger.info('leagues in sport %s: %s', sport, league_dict)
@@ -199,13 +188,21 @@ class Crawler(object):
         '''
         ret_dict = {}
         
-        # python dict: https://stackoverflow.com/questions/10458437/what-is-the-difference-between-dict-items-and-dict-iteritems#10458567
+        # Initial call to print 0% progress
+        total_rows = len(league_dict)
+        j = 0
+        self._print_progress_bar(j, total_rows, prefix = 'Progress:', suffix = 'Complete', length = 50)
+        
         for k,links in league_dict.items():
+        
             for link in links:
-                #print('key: {0}\nvalue: {1}'.format(k,v))
                 a_list = self._league_seasons(link)
                 for a in a_list:
                     ret_dict.setdefault(k, []).append(a)
+                    
+        # progress bar
+        j += 1
+        self._print_progress_bar(j, total_rows, prefix = 'Progress:', suffix = 'Complete', length = 50)
         
         return ret_dict
 
