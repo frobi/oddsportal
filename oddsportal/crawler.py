@@ -200,9 +200,9 @@ class Crawler(object):
                 for a in a_list:
                     ret_dict.setdefault(k, []).append(a)
                     
-        # progress bar
-        j += 1
-        self._print_progress_bar(j, total_rows, prefix = 'Progress:', suffix = 'Complete', length = 50)
+            # progress bar
+            j += 1
+            self._print_progress_bar(j, total_rows, prefix = 'Progress:', suffix = 'Complete', length = 50)
         
         return ret_dict
 
