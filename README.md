@@ -11,7 +11,7 @@ Scraper/parser to ge the results from oddsportal.com. Currently can scrape resul
 Exports data into sqlite3 db.
 Create sqlite3 db before use in /data folder.
 
-**Usage**
+## Usage
 
     -h, --help            show this help message and exit
     --tz                  set the Time Zone
@@ -45,4 +45,7 @@ After we have the necessary links we can download the results and save them into
 - *ops --scrape floorball_links.json bets.db3 floorball*
 
 original source code: https://github.com/DMPierre/oddsPortalScraper/blob/master/OddsParser.py
+
+## BUG
+2019-09-29 - there is some memory issue. The Webdrivercontent size can grow fast and can be very huge (5GB+)
 
